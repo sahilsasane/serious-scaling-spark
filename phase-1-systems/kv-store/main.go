@@ -10,14 +10,15 @@ import (
 )
 
 type KVStore struct {
-	mu      sync.RWMutex
-	data    map[string]string
-	walFile *os.File
+	mu          sync.RWMutex
+	data        map[string]string
+	walFile     *os.File
+	replicaAddr string
 }
 
-func NewKVStore(walPath string) *KVStore {
+func NewKVStore(walPath string, replicaAddr string) *KVStore {
 	f, _ := os.OpenFile(walPath, os.O_APPEND|os.O_CREATE|os.O_RDWR, 0644)
-	kv := &KVStore{data: make(map[string]string), walFile: f}
+	kv := &KVStore{data: make(map[string]string), walFile: f, replicaAddr: replicaAddr}
 	kv.replay()
 	return kv
 }
@@ -48,11 +49,25 @@ func (kv *KVStore) replay() {
 	}
 }
 
+func (kv *KVStore) forward(cmd string) {
+	if kv.replicaAddr == "" {
+		return
+	}
+	conn, err := net.Dial("tcp", kv.replicaAddr)
+	if err != nil {
+		fmt.Println("replication failed: ", err)
+		return
+	}
+	defer conn.Close()
+	fmt.Fprintln(conn, cmd)
+}
+
 func (kv *KVStore) Set(key, value string) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	kv.log(fmt.Sprintf("SET %s %s", key, value))
 	kv.data[key] = value
+	go kv.forward(fmt.Sprintf("SET %s %s", key, value))
 }
 
 func (kv *KVStore) Get(key string) (string, bool) {
@@ -67,6 +82,7 @@ func (kv *KVStore) Del(key string) {
 	defer kv.mu.Unlock()
 	kv.log(fmt.Sprintf("DEL %s", key))
 	delete(kv.data, key)
+	go kv.forward(fmt.Sprintf("DEL %s", key))
 }
 
 func (kv *KVStore) Keys() []string {
@@ -129,12 +145,29 @@ func handleConn(conn net.Conn, kv *KVStore) {
 }
 
 func main() {
-	kv := NewKVStore("wal.log")
 
-	ln, err := net.Listen("tcp", ":6379")
+	port := "6379"
+	replicaAddr := ""
+
+	if len(os.Args) > 1 {
+		port = os.Args[1]
+	}
+	if len(os.Args) > 2 {
+		replicaAddr = "localhost:" + os.Args[2]
+	}
+	kv := NewKVStore("wal-"+port+".log", replicaAddr)
+
+	ln, err := net.Listen("tcp", ":"+port)
 	if err != nil {
 		panic(err)
 	}
+
+	if replicaAddr != "" {
+		fmt.Printf("KV store (leader) listening on: %s, replicating to %s\n", port, replicaAddr)
+	} else {
+		fmt.Printf("KV store (follower) listening on %s\n", port)
+	}
+
 	fmt.Println("KV store listening on :6379")
 
 	for {
