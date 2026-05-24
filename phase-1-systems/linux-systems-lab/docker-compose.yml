@@ -1,0 +1,27 @@
+services:
+  lab:
+    build: .
+    ports:
+      - "8080:8080"
+    # perf + strace need elevated privileges
+    cap_add:
+      - SYS_PTRACE
+      - PERFMON
+    security_opt:
+      - seccomp:unconfined
+    pid: host
+
+  tools:
+    build: .
+    entrypoint: /bin/bash
+    stdin_open: true
+    tty: true
+    cap_add:
+      - SYS_PTRACE
+      - PERFMON
+    security_opt:
+      - seccomp:unconfined
+    pid: host
+    network_mode: host
+    depends_on:
+      - lab

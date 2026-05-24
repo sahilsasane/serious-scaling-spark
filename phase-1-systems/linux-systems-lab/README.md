@@ -9,7 +9,23 @@ A simple service designed to create CPU, memory, and I/O pressure so you can pra
 - `GET /mem?mb=128`
 - `GET /mixed?workers=4&loops=1000000`
 
-## Run
+## Run (Docker — recommended, gives you real Linux perf/strace)
+```bash
+# start the service
+docker compose up -d lab
+
+# open a tools shell (perf, strace, lsof, htop all available)
+docker compose run --rm tools
+```
+
+Inside the tools shell:
+```bash
+# hit the service
+curl http://localhost:8080/cpu
+bash scripts/load.sh http://localhost:8080 20
+```
+
+## Run (local macOS)
 ```bash
 go run .
 ```
